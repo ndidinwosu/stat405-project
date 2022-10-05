@@ -1,0 +1,69 @@
+---
+title: "ndidi-draft2"
+author: "Ndidi Nwosu"
+date: "2022-10-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+Bar graph of the number of bike rides by the day of the week, with distinct bars for each type of bike.
+
+
+```{r}
+bike_rides <- read.csv("C:/Users/Ndidi/Desktop/2022-23/fall/STAT 405/202208-capitalbikeshare-tripdata/202208-capitalbikeshare-tripdata.csv",
+                         header = TRUE, sep = ",")
+#using ggplot
+library(ggplot2)
+days <- weekdays(as.Date(bike_rides$started_at))
+rides_by_day <- data.frame(days)
+rides_by_day$rideable_type <- bike_rides$rideable_type
+rides_by_day$durations <- as.numeric(difftime(bike_rides$ended_at, bike_rides$started_at))
+rides_by_day$end_id <- bike_rides$end_station_id
+ggplot(rides_by_day) +
+  geom_bar(aes(x = days, fill = rideable_type), position = 'dodge') +
+  
+  ggtitle("Bike Rides by Day of the Week") +
+  xlab("Day") +
+  ylab("Number of Rides") +
+  theme_bw() +
+  theme(axis.text.x = element_text(face = 'bold', size = 10),
+        axis.text.y = element_text(face = 'bold', size = 10))
+```
+Failed attempt at making a violin graph?
+```{r}
+ggplot(rides_by_day) +
+  geom_violin(aes(x = days, y = durations, fill = days)) +
+  
+  ggtitle("Violin Plot") +
+  xlab("Day") +
+  ylab("CARAT") +
+  theme_bw() +
+  
+  theme(axis.text.x = element_text(face = 'bold', size = 10),
+        axis.text.y = element_text(face = 'bold', size = 10))
+```
+
+Scatterplot of rides of duration vs. distance (not done yet):
+```{r}
+ggplot(rides_by_day) +
+  geom_point(aes(x = durations , y = end_id,
+                 color = rideable_type, shape = rideable_type), size = 4) +
+  
+  ggtitle("Durations of Rides by End Station ID") +
+  xlab("Duration in seconds") +
+  ylab("End Station ID") +
+  theme_bw() +
+  theme(axis.text.x = element_text(face = 'bold.italic', 
+                                   color = 'darkgreen',
+                                   size = 10, angle = 0),
+        axis.text.y = element_text(face = 'bold', 
+                                   color = 'blue',
+                                   size = 10, angle = 45))
+
+```
+
