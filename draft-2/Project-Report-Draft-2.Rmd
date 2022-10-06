@@ -1,0 +1,162 @@
+---
+title: "Project Report Draft 2"
+date: '2022-10-06'
+author: "Vivian Zheng, Tyler Braito, Calvin Aberg, Mattia Saladini, and Ndidi Nwosu"
+output: pdf_document
+fig_height: 5
+fig_width: 5
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#Loading data:
+#setwd("~/Documents/Sem 1/STAT 405/City Bike Data")
+bike_dta <- read.csv("C:/Users/Ndidi/Desktop/2022-23/fall/STAT 405/202208-capitalbikeshare-tripdata/202208-capitalbikeshare-tripdata.csv", header = TRUE, sep = ",")
+```
+
+## Plots on City Bike Data in Washington DC
+
+Our data measures all city bike rentals in the city of Washington DC throughout
+the month of August 2022. Every bike rental is tracked along with information such
+as bike type, rental start and stop time, start and stop station names, and member type.
+
+1. Scatterplot of Ride Duration by Date
+
+```{r, echo=FALSE}
+library(ggplot2)
+# install.packages("tidyverse")
+start_time <- bike_dta$started_at
+end_time <- bike_dta$ended_at
+bike_dta$start_time <- as.POSIXct(start_time,tz="EST")
+bike_dta$end_time <- as.POSIXct(end_time,tz="EST")
+bike_dta$duration <- as.numeric((bike_dta$end_time - bike_dta$start_time) / 60)
+
+# Identify top station (Lincoln Memorial)
+# tab <- table(bike_dta$start_station_name)
+# sort(tab)
+linc_mem <- subset(bike_dta, bike_dta$start_station_name == "Lincoln Memorial" &
+                     bike_dta$end_station_name != "Lincoln Memorial")
+linc_mem <- na.omit(linc_mem)
+
+ggplot(data = linc_mem, aes(x = start_time, y = duration)) +
+  geom_point(color = "skyblue") +
+  ggtitle("Duration by Date for Lincoln Memorial Station, August 2022") +
+  xlab("Date") + ylab("Rental Duration (min)")
+```
+This scatter plot shows the rental duration differences between dates throughout the month of August. Most of the rentals are clustered under 60 minutes, with a few outliers above 1000 minutes. These outliers may reflect errors in the tracking system of the bike, or instances when users forgot to return their bikes to another station. There seems to be a pretty uniform distribution of rentals by date throughout the month.
+
+2. Density Plot of Riding Distance by Bike Type
+
+```{r, echo=FALSE, output=TRUE}
+#Calculating duration:
+start_time <- as.POSIXct(bike_dta$started_at,tz="EST")
+end_time <- as.POSIXct(bike_dta$ended_at,tz="EST")
+bike_dta$duration_sec <- end_time - start_time
+bike_dta$duration_min <- bike_dta$duration_sec/60
+
+
+
+#Densities:
+bike_dta <- na.omit(bike_dta)
+bike_dta$distance <-sqrt((69*(bike_dta$end_lat - bike_dta$start_lat))**2 + 55*((bike_dta$end_lat - bike_dta$start_lat))**2)
+bike_dta2 <- bike_dta[bike_dta$distance<=3, ]
+
+ggplot(bike_dta2, aes(x=distance)) + geom_density(alpha=.2, fill="#FF6666") + geom_vline(aes(xintercept=mean(distance)), color="blue", linetype="dashed", size=1) + labs(x="Distance (miles)", y = "Density") + facet_grid(. ~ rideable_type)
+```
+
+In this plot, we are visualizing the differences in riding distance by type of rideable bike. To do this, we can see three separate density plots of each rideable type of bike that Capital Bikes offers. This visualization gives us a great deal of information of the tendencies of the users of each bike type. With the docked bike, there is a very large concentration of riders riding very short distances and stopping. However, with the electric bikes, there is a much larger skew of riders riding much longer distances. These tendencies can give us insight into which bike types are preferable in different locations, and how users are likely to use different bikes.
+
+3. Barplots of Distance Ridden by Type of Bike
+
+```{r, echo=FALSE, output=TRUE}
+library(ggthemes)
+dist <- sqrt((69*(bike_dta$end_lat - bike_dta$start_lat))**2 + 55*((bike_dta$end_lat - bike_dta$start_lat))**2)
+
+bike_dta$dist <- dist
+
+brks <- seq(-250000, 250000, 50000)
+lbls = paste0(as.character(c(seq(250, 0, -50), seq(50, 250, 50))), "k")
+
+#bike_dta$rideable_type
+
+# Plot
+ggplot(bike_dta, aes(x = rideable_type, y = dist, fill = member_casual)) +
+  geom_bar(stat = "identity", width = .6) +
+  coord_flip() + 
+  theme_tufte() + 
+  scale_fill_brewer(palette = "Dark2") + 
+  theme(plot.title = element_text(hjust = .5), axis.ticks = element_blank()) +
+  labs(title = "Distance Ridden By Type of Bike") +
+  xlab("Type of Bike") +
+  ylab("Distance Ridden in August") +
+  scale_y_continuous(breaks = brks, labels = lbls) +
+  theme(plot.title = element_text(hjust = .5, size = 25), axis.ticks = element_blank()) +
+  labs(fill = "Type of Member")
+
+```
+
+This plot illustrates the distance ridden on different types of bikes colored by whether the rider was a member of Capital Bikes or just a casual rider. From a business perspective, this plot is very helpful in illustrating the tendencies of different customers and how they use Capital Bikes’ products. With this, we can see that the bulk of the usage of the bikes are centered on classic bikes with the majority of member distance being on the classic bikes. However, the docked bike has seen very little usage by member customers. The reasons for this disparity could be a question to be examined by those with a stake in the business’ success.
+
+
+4. Boxplots of Bike Types and Rental Durations
+
+
+```{r, echo = FALSE, output = TRUE}
+#Calculating duration:
+start_time <- as.POSIXct(bike_dta$started_at,tz="EST")
+end_time <- as.POSIXct(bike_dta$ended_at,tz="EST")
+bike_dta$duration_sec <- end_time - start_time
+bike_dta$duration_min <- bike_dta$duration_sec/60
+
+#Boxplots:
+par(mfrow = c(1, 3))
+boxplot(subset(bike_dta$duration_min, bike_dta$duration_min<=60 & bike_dta$rideable_type == "classic_bike"), main="Classic Bikes Boxplot", 
+        ylab="Duration (min)", col="red")
+boxplot(subset(bike_dta$duration_min, bike_dta$duration_min<=60 & bike_dta$rideable_type == "electric_bike"), main="Electric Bikes Boxplot", col="green")
+boxplot(subset(bike_dta$duration_min, bike_dta$duration_min<=60 & bike_dta$rideable_type == "docked_bike"), main="Docked Bikes Boxplot", col="blue")
+
+```
+
+5. Most Popular Stations by Start and End Location
+
+This plot describes the most popular starting stations and ending stations for Capital Bike riders in August. The total height of the bar is the sum of trips started and ended at a given station, with the blue being the number of trips ended and red being the number of trips started. These five stations were the most commonly visited stations in the Washington D.C. area. We can see that there isn’t a majority station within the data, and, within the top five stations, there is a fairly balanced flow in and out of each station.
+
+```{r, echo = FALSE, output = TRUE}
+counts_start <- head(sort(table(bike_dta$start_station_name), decreasing = TRUE), 6)[-1]
+
+counts_end <- head(sort(table(bike_dta$end_station_name), decreasing = TRUE), 6)[-1]
+
+stations <- rbind(counts_start,counts_end)
+
+par(mfrow = c(1, 1))
+barplot(stations, col = c('darkblue', 'red'),
+        names.arg = c("Lincoln",'Jefferson', "T St.", '15th', 'Union St'),
+        main = "Most Popular Stations by Start and End Location",
+        legend = c('End Location', 'Start Location'),
+        xlab = 'Stations',
+        ylab = "Count of Riders")
+```
+6. Histogram of Usage Frequency by Days of the Week and Date
+
+The plot on the right, "Ride Frequency Per Day of Week" zooms in on the trend observed in the “Rides by Day in August” plot by giving an account of which days of the week exhibit a peak in bike usage activity. Based on the plot, there seems to be both a midweek peak and a weekend peak on Saturday. 
+The plot on the right, "Rides By Day in August", shows the frequency of bike rides using the Capital Bike bikes throughout the month of August by day. Every value on the x-axis represents a day of August (1st to the 31st) and the height of each bar represents the number of bike rides that day. 
+The minimum number of rides occurs on August 10th, with 7,771 rides, and the maximum number of rides occurs on August 13th, with 14,860 rides. There is no drastic peak or valley, and the amount of bike rides is relatively uniformly distributed besides minor peaks around August 13th and August 27th. On average, there were 12,182.48 rides per day. 
+
+
+```{r, echo = FALSE, output = TRUE}
+par(mfrow = c(1, 2))
+bike_dta$started_at <- as.POSIXct(bike_dta$started_at, tz = "EST")
+bike_dta$ended_at <-as.POSIXct(bike_dta$ended_at, tz = "EST")
+bike_dta$duration <-  as.numeric(bike_dta$ended_at - bike_dta$started_at)
+bike_dta$weekday <-as.Date(bike_dta$started_at)
+bike_dta$weekday <- format(bike_dta$weekday, "%a")
+bike_dta$weekdayn <- as.numeric(format(bike_dta$started_at, "%w"))
+hist(bike_dta$weekdayn, breaks = -.5+0:7, labels = unique(bike_dta$weekday[order(bike_dta$weekdayn)]), xlab = "", xaxt = "n",  main ="Ride Frequency Per Day of Week", col = "deepskyblue")
+date_formatted <- as.Date(bike_dta$started_at, format = "%Y-%m-%d")
+ride_start_days <- format(date_formatted, "%d")
+barplot(table(ride_start_days), main = "Rides By Day in August", xlab = "Day", ylab = "Number of Rides", col = "yellow")
+
+```
+
