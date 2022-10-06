@@ -1,0 +1,159 @@
+---
+title: "Capital Bikes"
+output: html_document
+date: '2022-09-27'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+bike_share<-read.csv("C:/Users/calvi/Downloads/202208-capitalbikeshare-tripdata/202208-capitalbikeshare-tripdata.csv")
+
+```
+
+
+```{r}
+hist(bike_share$start_lat)
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+start_time <- as.POSIXct(start_time,tz="EST")
+end_time <- as.POSIXct(end_time,tz="EST")
+
+bike_share$duration <- (end_time - start_time)
+
+hist(as.numeric(bike_share$duration), breaks = 20, freq=FALSE)
+```
+
+
+```{r}
+counts <- table(bike_share$start_station_name)
+top_stations <- head(sort(counts, decreasing = TRUE), 6)[-1]
+barplot(top_stations,
+        names.arg=c("Lincoln Mem.", "T St.", 'Union St', 'Jefferson', '15th'),
+        cex.axis = .2,
+        col = 'darkblue',
+        main = 'Most Popular Stations by Start')
+```
+
+
+```{r}
+counts_start <- head(sort(table(bike_share$start_station_name), decreasing = TRUE), 6)[-1]
+
+counts_end <- head(sort(table(bike_share$end_station_name), decreasing = TRUE), 6)[-1]
+
+stations <- rbind(counts_start,counts_end)
+
+barplot(stations, col = c('darkblue', 'red'),
+        names.arg = c("Lincoln",'Jefferson', "T St.", '15th', 'Union St'),
+        main = "Most Popular Stations by Start and End Location",
+        legend = c('End Location', 'Start Location'),
+        xlab = 'Stations',
+        ylab = "Count of Riders")
+```
+
+
+```{r}
+dist <- sqrt((69*(bike_share$end_lat - bike_share$start_lat))**2 + 55*((bike_share$end_lat - bike_share$start_lat))**2)
+
+bike_share$dist <- dist
+
+
+density(x = dist)
+sum(is.na(dist))
+dist <- dist[!is.na(dist)]
+
+
+hist(dist, xlim =c(0,8), breaks = 25,
+     main = 'Histogram of Distance Traveled on Bike',
+     xlab = 'Distance (in miles)',
+     density = 100,
+     col = 'chocolate')
+
+lines(density(dist), lwd =3)
+
+```
+
+
+
+```{r}
+bike_share
+unique(bike_share$member_casual)
+
+theme_set(theme_classic())
+
+# Plot
+g <- ggplot(mpg, aes(cty))
+g + geom_density(aes(fill=factor(cyl)), alpha=0.8) + 
+    labs(title="Density plot", 
+         subtitle="City Mileage Grouped by Number of cylinders",
+         caption="Source: mpg",
+         x="City Mileage",
+         fill="# Cylinders")
+
+library(ggplot2)
+
+theme_set(theme_classic())
+
+# Plot
+ggplot(data = bike_share, aes(dist))+
+  geom_density(aes(fill=factor(rideable_type)), alpha=0.8) +
+  xlim(0,7) +
+  labs(title="Density plot", 
+         subtitle="City Mileage Grouped by Number of cylinders",
+         caption="Source: mpg",
+         x="City Mileage",
+         fill="# Cylinders")
+
+
+
+
+
+```
+```{r}
+library(ggthemes)
+options(scipen = 999)  # turns of scientific notations like 1e+40
+
+
+brks <- seq(-250000, 250000, 50000)
+lbls = paste0(as.character(c(seq(250, 0, -50), seq(50, 250, 50))), "k")
+
+bike_share$dist_new <- ifelse(bike_share$member_casual == 'member', -1*bike_share$dist, bike_share$dist)
+
+bike_share$rideable_type
+
+# Plot
+ggplot(bike_share, aes(x = rideable_type, y = dist_new, fill = member_casual)) +
+  geom_bar(stat = "identity", width = .6) +
+  coord_flip() + 
+  theme_tufte() + 
+  scale_fill_brewer(palette = "Dark2") + 
+  theme(plot.title = element_text(hjust = .5), axis.ticks = element_blank()) +
+  labs(title = "Distance Ridden By Type of Bike") +
+  xlab("Type of Bike") +
+  ylab("Distance Ridden in August") +
+  scale_y_continuous(breaks = brks, labels = lbls) +
+  theme(plot.title = element_text(hjust = .5, size = 25), axis.ticks = element_blank()) +
+  labs(fill = "Type of Member")
+
+
+  
+  
+
+                            
+```
+
+
+
+
