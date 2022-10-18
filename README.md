@@ -8,4 +8,4 @@
 
 **draft-2** folder: contains code R scripts and Rmd files with ggplot graphs of the bike share data for the second draft assignment.
 
-hello
+hello!
