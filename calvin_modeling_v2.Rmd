@@ -1,0 +1,89 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+#Modeling Notebook
+
+```{r}
+weather <- Washington_DC_USA_weather_2022_08_01_to_2022_08_31
+bikes <- read.csv("C:/Users/calvi/Downloads/202208-capitalbikeshare-tripdata/202208-capitalbikeshare-tripdata.csv")
+```
+
+
+```{r}
+bikes
+library(dplyr)
+# data manipulation
+bikes$date <- substr(bikes$started_at, 1, 11)
+
+mod_data <- bikes %>%
+  group_by(date) %>%
+  summarize(num_bikers = n())
+
+mod_data$date <- as.Date(mod_data$date)
+
+mod_data <- mod_data %>% inner_join(weather, by = c('date' = "datetime"))
+```
+
+```{r}
+# linear modeling
+mod_1 = lm(num_bikers~tempmax+tempmin+temp+feelslike+dew+humidity+precip+windgust+windspeed+winddir+visibility+solarradiation+severerisk+uvindex, data = mod_data)
+summary(mod_1)
+```
+
+
+```{r}
+# visualizing linear feature importance
+library(dotwhisker)
+dwplot(mod_1) +
+  ggtitle("Linear Model Feature Coefficients") +
+  labs(x = "Standardized Effect", y = "Feature Name", subtitle = "Large importance in precipitation, tempurature") +
+  theme_classic() +
+  geom_vline(xintercept = 0) +
+  theme(legend.position = "none")
+
+```
+
+
+```{r}
+# random forest regression
+mod_data
+#install.packages("randomForest")
+library(randomForest)
+library(ggplot2)
+rf.fit <- randomForest(num_bikers~tempmax+tempmin+temp+feelslike+dew+humidity+precip+
+                         windgust+windspeed+winddir+visibility+solarradiation+severerisk+uvindex,
+                       data=mod_data, ntree=1000,
+                       keep.forest=FALSE, importance=TRUE)
+rf.fit
+rmse <- sqrt(1225608)
+rmse
+
+ImpData <- as.data.frame(importance(rf.fit))
+ImpData$Var.Names <- row.names(ImpData)
+```
+
+```{r}
+
+ggplot(ImpData, aes(x=Var.Names, y=`%IncMSE`)) +
+  geom_segment( aes(x=Var.Names, xend=Var.Names, y=0, yend=`%IncMSE`), color="blue") +
+  geom_point(aes(size = IncNodePurity), color="dodgerblue4", alpha=0.6) +
+  theme_light() +
+  coord_flip() +
+  theme(
+    legend.position="none",
+    panel.grid.major.y = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank()
+  ) +
+  ggtitle("Random Forest Feature Importances") +
+  labs(x = "% Increase in MSE", y = "Variable Name", subtilte = "Precipitation measures prove to be effective predictors of bike traffic")
+```
+
+
+
+
+
+
+
+
