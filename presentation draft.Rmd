@@ -27,6 +27,7 @@ library(margins)
 library(geosphere)
 library(grid)
 library(tidyverse)
+# install.packages('sf')
 
 # Import bikeshare and weather csv as SQL
 dcon <- dbConnect(SQLite(), dbname = "mydba.sqlite")
@@ -146,38 +147,6 @@ bike_dta2 <- bike_dta[bike_dta$distance<=3, ]
 
 ggplot(bike_dta2, aes(x=distance)) + geom_density(alpha=.2, fill="#FF6666") + geom_vline(aes(xintercept=mean(distance)), color="blue", linetype="dashed", size=1) + labs(x="Distance (miles)", y = "Density") + facet_grid(. ~ rideable_type)
 ```
-
-
-## Barplots of Distance Ridden by Type of Bike
-
-```{r, echo=FALSE, output=TRUE, warning=FALSE}
-
-dist <- sqrt((69*(bike_dta$end_lat - bike_dta$start_lat))**2 + 55*((bike_dta$end_lat - bike_dta$start_lat))**2)
-
-bike_dta$dist <- dist
-
-brks <- seq(-250000, 250000, 50000)
-lbls = paste0(as.character(c(seq(250, 0, -50), seq(50, 250, 50))), "k")
-
-#bike_dta$rideable_type
-
-# Plot
-ggplot(bike_dta, aes(x = rideable_type, y = dist, fill = member_casual)) +
-  geom_bar(stat = "identity", width = .6) +
-  coord_flip() + 
-  theme_tufte() + 
-  scale_fill_brewer(palette = "Dark2") + 
-  theme(plot.title = element_text(hjust = .5), axis.ticks = element_blank()) +
-  labs(title = "Distance Ridden By Type of Bike") +
-  xlab("Type of Bike") +
-  ylab("Distance Ridden in August") +
-  scale_y_continuous(breaks = brks, labels = lbls) +
-  theme(plot.title = element_text(hjust = .5, size = 25), axis.ticks = element_blank()) +
-  labs(fill = "Type of Member")
-
-```
-
-
 
 ## Boxplots of Bike Types and Rental Durations
 
@@ -388,9 +357,9 @@ dwplot(mod_1) +
 ```
 
 
-```{r, include=FALSE, warning=FALSE, message=FALSE}
+```{r, echo=FALSE, include=FALSE, warning=FALSE, message=FALSE}
 # random forest regression
-mod_data
+# mod_data
 #install.packages("randomForest")
 library(randomForest)
 library(ggplot2)
@@ -398,7 +367,7 @@ rf.fit <- randomForest(num_bikers~tempmax+tempmin+temp+feelslike+dew+humidity+pr
                          windgust+windspeed+winddir+visibility+solarradiation+severerisk+uvindex,
                        data=mod_data, ntree=1000,
                        keep.forest=FALSE, importance=TRUE)
-rf.fit
+# rf.fit
 rmse <- sqrt(1225608)
 rmse
 
@@ -406,7 +375,7 @@ ImpData <- as.data.frame(importance(rf.fit))
 ImpData$Var.Names <- row.names(ImpData)
 ```
 
-```{r, warning=FALSE, message=FALSE}
+```{r, output=TRUE, echo=FALSE, warning=FALSE, message=FALSE}
 
 ggplot(ImpData, aes(x=Var.Names, y=`%IncMSE`)) +
   geom_segment( aes(x=Var.Names, xend=Var.Names, y=0, yend=`%IncMSE`), color="blue") +
@@ -423,138 +392,235 @@ ggplot(ImpData, aes(x=Var.Names, y=`%IncMSE`)) +
   labs(x = "% Increase in MSE", y = "Variable Name", subtilte = "Precipitation measures prove to be effective predictors of bike traffic")
 ```
 
+## Killer Plot
 
-##
-```{r, echo=FALSE, warning=FALSE, message=FALSE}
-library(shiny)
+```{r, echo = FALSE, output = TRUE, warning=FALSE}
+### Killer Plot Stuff
 
-# Define UI for application that draws a histogram
-ui <- fluidPage(
-   
-   # Application title
-   titlePanel("Old Faithful Geyser Data"),
-   
-   # Sidebar with a slider input for number of bins 
-   sidebarLayout(
-      sidebarPanel(
-         sliderInput("highlighted",
-                     "Number of Highlighted Stations:",
-                     min = 1,
-                     max = 20,
-                     value = 5
-          ),
-      
-      selectInput(inputId ="starter_station",
-                  label = "Choose MicroRNA",
-                  choices = c(1, 2, 3),
-                  selected = NULL
-      )
-      ),
-      # Show a plot of the generated distribution
-      mainPanel(
-         plotOutput("distPlot")
-      )
-   )
-)
+library(grid)
 
-# Define server logic required to draw a histogram
-server <- function(input, output) {
-  
-  ### Killer Plot Stuff
-  
-  library(grid)
-  
-  # rm(list = ls())
-  
-  
-  ## calculate bearings
 
-  bike_dta$bearings <- bearing(bike_dta[, c("start_lng", "start_lat")], bike_dta[, c("end_lng", "end_lat")])
+## calculate bearings
+library(geosphere)
+bike_dta$bearings <- bearing(bike_dta[, c("start_lng", "start_lat")], bike_dta[, c("end_lng", "end_lat")])
+
+#convert to radians
+bike_dta$bearings <- -(bike_dta$bearings * pi / 180 - pi/2)
+bike_dta$circle_x <- cos(bike_dta$bearings)
+bike_dta$circle_y <- sin(bike_dta$bearings)
+
+
+
+bike_dta <- subset(bike_dta, start_station_name != "")
+bike_dta <- subset(bike_dta, end_station_name != "")
+
+
+library(tidyverse)
+# install.packages('sf')
+
+bike_prepped <- bike_dta %>% group_by(start_station_name, end_station_name) %>% 
+  summarise(count = n(),
+            bearings = mean(bearings))
+bike_prepped$circle_x <- cos(bike_prepped$bearings)
+bike_prepped$circle_y <- sin(bike_prepped$bearings)
+
+station_plot_df <- bike_dta %>% group_by(start_station_name) %>% 
+  summarise(count = n(),
+            start_lat = mean(start_lat),
+            start_lng = mean(start_lng))
+library(sf)
+my_sf <- st_as_sf(station_plot_df, coords = c('start_lng', 'start_lat'))
+
+
+##Function for scaling counts
+opacity_scale <- function(x){(x-min(x))/(max(x)-min(x))}
+
+
+## Killer Plot Function
+killer_plot <- function(df, station_name, station_number = 5){
   
-  #convert to radians
-  bike_dta$bearings <- -(bike_dta$bearings * pi / 180 - pi/2)
-  bike_dta$circle_x <- cos(bike_dta$bearings)
-  bike_dta$circle_y <- sin(bike_dta$bearings)
+  #subset for desired station
+  station_df <- subset(df, start_station_name == station_name)
+  
+  #find top n stations
+  top.n.stations <- station_df[order(-station_df$count),]$end_station_name[1:station_number] 
+  
+  #set up grid
+  grid.newpage()
+  vp <- viewport(x = .325, y = 0.65, width = 0.7, height = 0.7)
+  pushViewport(vp)
+  grid.circle(x = .5, y = .5, r = 0.4, gp = gpar(fill = "black"), default.units = "native")
+  grid.circle(x = .5, y = .5, r = 0.38, default.units = "native")
+  
+  r = 0.38
+  
+  station_df$circle_x <- station_df$circle_x * r + 0.5
+  station_df$circle_y <- station_df$circle_y * r + 0.5
+  
+  #determine opacity
+  station_df$opacity <- opacity_scale(station_df$count)
   
   
-  
-  bike_dta <- subset(bike_dta, start_station_name != "")
-  bike_dta <- subset(bike_dta, end_station_name != "")
-  
-  bike_prepped <- bike_dta %>% group_by(start_station_name, end_station_name) %>% 
-    summarise(count = n(),
-              bearings = mean(bearings))
-  bike_prepped$circle_x <- cos(bike_prepped$bearings)
-  bike_prepped$circle_y <- sin(bike_prepped$bearings)
-  
-  station_plot_df <- bike_dta %>% group_by(start_station_name) %>% 
-    summarise(count = n(),
-              start_lat = mean(start_lat),
-              start_lng = mean(start_lng))
-  
-  my_sf <- st_as_sf(station_plot_df, coords = c('start_lng', 'start_lat'))
-  
-  
-  ##Function for scaling counts
-  opacity_scale <- function(x){(x-min(x))/(max(x)-min(x))}
-  
-  
-  ## Killer Plot Function
-  killer_plot <- function(df, station_name, station_number = 5){
-    
-    #subset for desired station
-    station_df <- subset(df, start_station_name == station_name)
-    
-    #find top n stations
-    top.n.stations <- station_df[order(-station_df$count),]$end_station_name[1:station_number] 
-    
-    #set up grid
-    grid.newpage()
-    vp <- viewport(x = .325, y = 0.65, width = 0.7, height = 0.7)
-    pushViewport(vp)
-    grid.circle(x = .5, y = .5, r = 0.4, gp = gpar(fill = "black"), default.units = "native")
-    grid.circle(x = .5, y = .5, r = 0.38, default.units = "native")
-    
-    r = 0.38
-    
-    station_df$circle_x <- station_df$circle_x * r + 0.5
-    station_df$circle_y <- station_df$circle_y * r + 0.5
-    
-    #determine opacity
-    station_df$opacity <- opacity_scale(station_df$count)
-    
-    
-    #iterate through trips to draw lines
-    for (i in 1:nrow(station_df)){
-      angle = station_df[i, "bearings"]
-      grid.lines(x = c(.5, station_df$circle_x[i]), y = c(.5, station_df$circle_y[i]), 
-                 default.units = "native", gp = gpar(lwd = 3, alpha = station_df$opacity[i]))
-    }
-    
-    
-    grid.circle(x=.5, y = .5, r = 0.03, gp = gpar(fill = "gray"), default.units = "native")
-    
-    popViewport()
-    vp2 <- viewport(x = .7, y = 0.25, width = 0.6, height = 0.55)
-    my_sf$group <- as.factor(ifelse(station_plot_df$start_station_name == station_name, "1", 
-                                    ifelse(station_plot_df$start_station_name %in% top.n.stations, "2", "0")))
-    #this is not part of the killer plot, so ggplot is okay
-    plota <- ggplot(my_sf) + 
-      geom_sf(aes(color = group))+
-      scale_color_manual(values = c("black", "green", "red"))+
-      theme_void()+    
-      theme(legend.position = "none")
-  
-    print(plota, vp = vp2)
+  #iterate through trips to draw lines
+  for (i in 1:nrow(station_df)){
+    angle = station_df[i, "bearings"]
+    grid.lines(x = c(.5, station_df$circle_x[i]), y = c(.5, station_df$circle_y[i]), 
+               default.units = "native", gp = gpar(lwd = 3, alpha = station_df$opacity[i]))
   }
-   
-   output$distPlot <- renderPlot({
-     killer_plot(df = bike_prepped, station_name = names(sort(table(bike_dta$start_station_name), decreasing= TRUE))[8], 15)
-   })
+  
+  
+  grid.circle(x=.5, y = .5, r = 0.03, gp = gpar(fill = "gray"), default.units = "native")
+  
+  popViewport()
+  vp2 <- viewport(x = .7, y = 0.25, width = 0.6, height = 0.55)
+  my_sf$group <- as.factor(ifelse(station_plot_df$start_station_name == station_name, "1", 
+                                  ifelse(station_plot_df$start_station_name %in% top.n.stations, "2", "0")))
+  #this is not part of the killer plot, so ggplot is okay
+  plota <- ggplot(my_sf) + 
+    geom_sf(aes(color = group))+
+    scale_color_manual(values = c("black", "green", "red"))+
+    theme_void()+    
+    theme(legend.position = "none")
+
+  print(plota, vp = vp2)
 }
 
-# Run the application 
-shinyApp(ui = ui, server = server)
+## second argument is selecting center station, third is number of stations to highlight in red on the second map.
+
+killer_plot(df = bike_prepped, station_name = names(sort(table(bike_dta$start_station_name), decreasing= TRUE))[8], 15)
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# library(shiny)
+# 
+# # Define UI for application that draws a histogram
+# ui <- fluidPage(
+#    
+#    # Application title
+#    titlePanel("Old Faithful Geyser Data"),
+#    
+#    # Sidebar with a slider input for number of bins 
+#    sidebarLayout(
+#       sidebarPanel(
+#          sliderInput("highlighted",
+#                      "Number of Highlighted Stations:",
+#                      min = 1,
+#                      max = 20,
+#                      value = 5
+#           ),
+#       
+#       selectInput(inputId ="starter_station",
+#                   label = "Choose Starting Station",
+#                   choices = c(1, 2, 3),
+#                   selected = NULL
+#       )
+#       ),
+#       # Show a plot of the generated distribution
+#       mainPanel(
+#          plotOutput("distPlot")
+#       )
+#    )
+# )
+# 
+# # Define server logic required to draw a histogram
+# server <- function(input, output) {
+#   
+#   ### Killer Plot Stuff
+#   
+#   library(grid)
+#   
+#   # rm(list = ls())
+#   
+#   
+#   ## calculate bearings
+# 
+#   bike_dta$bearings <- bearing(bike_dta[, c("start_lng", "start_lat")], bike_dta[, c("end_lng", "end_lat")])
+#   
+#   #convert to radians
+#   bike_dta$bearings <- -(bike_dta$bearings * pi / 180 - pi/2)
+#   bike_dta$circle_x <- cos(bike_dta$bearings)
+#   bike_dta$circle_y <- sin(bike_dta$bearings)
+#   
+#   
+#   
+#   bike_dta <- subset(bike_dta, start_station_name != "")
+#   bike_dta <- subset(bike_dta, end_station_name != "")
+#   
+#   bike_prepped <- bike_dta %>% group_by(start_station_name, end_station_name) %>% 
+#     summarise(count = n(),
+#               bearings = mean(bearings))
+#   bike_prepped$circle_x <- cos(bike_prepped$bearings)
+#   bike_prepped$circle_y <- sin(bike_prepped$bearings)
+#   
+#   station_plot_df <- bike_dta %>% group_by(start_station_name) %>% 
+#     summarise(count = n(),
+#               start_lat = mean(start_lat),
+#               start_lng = mean(start_lng))
+#   
+#   my_sf <- st_as_sf(station_plot_df, coords = c('start_lng', 'start_lat'))
+#   
+#   
+#   ##Function for scaling counts
+#   opacity_scale <- function(x){(x-min(x))/(max(x)-min(x))}
+#   
+#   
+#   ## Killer Plot Function
+#   killer_plot <- function(df, station_name, station_number = 5){
+#     
+#     #subset for desired station
+#     station_df <- subset(df, start_station_name == station_name)
+#     
+#     #find top n stations
+#     top.n.stations <- station_df[order(-station_df$count),]$end_station_name[1:station_number] 
+#     
+#     #set up grid
+#     grid.newpage()
+#     vp <- viewport(x = .325, y = 0.65, width = 0.7, height = 0.7)
+#     pushViewport(vp)
+#     grid.circle(x = .5, y = .5, r = 0.4, gp = gpar(fill = "black"), default.units = "native")
+#     grid.circle(x = .5, y = .5, r = 0.38, default.units = "native")
+#     
+#     r = 0.38
+#     
+#     station_df$circle_x <- station_df$circle_x * r + 0.5
+#     station_df$circle_y <- station_df$circle_y * r + 0.5
+#     
+#     #determine opacity
+#     station_df$opacity <- opacity_scale(station_df$count)
+#     
+#     
+#     #iterate through trips to draw lines
+#     for (i in 1:nrow(station_df)){
+#       angle = station_df[i, "bearings"]
+#       grid.lines(x = c(.5, station_df$circle_x[i]), y = c(.5, station_df$circle_y[i]), 
+#                  default.units = "native", gp = gpar(lwd = 3, alpha = station_df$opacity[i]))
+#     }
+#     
+#     
+#     grid.circle(x=.5, y = .5, r = 0.03, gp = gpar(fill = "gray"), default.units = "native")
+#     
+#     popViewport()
+#     vp2 <- viewport(x = .7, y = 0.25, width = 0.6, height = 0.55)
+#     my_sf$group <- as.factor(ifelse(station_plot_df$start_station_name == station_name, "1", 
+#                                     ifelse(station_plot_df$start_station_name %in% top.n.stations, "2", "0")))
+#     #this is not part of the killer plot, so ggplot is okay
+#     plota <- ggplot(my_sf) + 
+#       geom_sf(aes(color = group))+
+#       scale_color_manual(values = c("black", "green", "red"))+
+#       theme_void()+    
+#       theme(legend.position = "none")
+#   
+#     print(plota, vp = vp2)
+#   }
+#    
+#    output$distPlot <- renderPlot({
+#      killer_plot(df = bike_prepped, station_name = names(sort(table(bike_dta$start_station_name), decreasing= TRUE))[8], input$highlighted)
+#    })
+# }
+# 
+# # Run the application 
+# shinyApp(ui = ui, server = server)
 ```
 
 ## Conclusion
