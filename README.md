@@ -12,4 +12,4 @@
 
 **draft-4** folder: contains code R scripts and Rmd files with ggplot graphs of the bike share data for the fourth draft assignment.
 
-**draft54** folder: contains code R scripts and Rmd files with ggplot graphs of the bike share data for the fifth draft assignment.
+**draft-5** folder: contains code R scripts and Rmd files with ggplot graphs of the bike share data for the fifth draft assignment.
