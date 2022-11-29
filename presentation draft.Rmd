@@ -1,0 +1,570 @@
+---
+title: "Bike Share and Weather Data in Washington DC"
+author: "STAT 405 - Vivian Zheng, Tyler Braito, Calvin Aberg, Mattia Saladini, and Ndidi Nwosu"
+date: "November 29, 2022"
+output: ioslides_presentation
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#Loading data:
+#setwd("~/Documents/Sem 1/STAT 405/City Bike Data")
+library(ggplot2)
+library(dplyr)
+library(ggthemes)
+library(RSQLite)
+library(stringr)
+library(lubridate)
+library(ggeffects)
+library(dotwhisker)
+library(ggeffects)
+library(margins)
+library(geosphere)
+library(grid)
+library(tidyverse)
+
+# Import bikeshare and weather csv as SQL
+dcon <- dbConnect(SQLite(), dbname = "mydba.sqlite")
+weatherTable <- read.csv(paste0("C:/Users/Ndidi/Desktop/2022-23/fall/STAT 405/data project/stat405-project/Washington,DC,USA weather 2022-08-01 to 2022-08-31.csv"))
+dbWriteTable(conn = dcon, name = "weatherTable", 
+             weatherTable, append = TRUE, row.names = FALSE)
+dbListTables(dcon)
+bike_dta <- read.csv("C:/Users/Ndidi/Desktop/2022-23/fall/STAT 405/202208-capitalbikeshare-tripdata/202208-capitalbikeshare-tripdata.csv", header = TRUE, sep = ",")
+dbWriteTable(conn = dcon, name = "bike_dta", 
+             bike_dta, append = TRUE, row.names = FALSE)
+dbListTables(dcon)
+```
+## Our Data
+
+* **Primary Dataset**: City Bike Data in Washington D.C, August 2022
+* **Secondary Dataset**: Weather Data in Washington D.C., August 2022
+
+## Our Research
+* **Research Questions:**
+  + Is there a pattern in what bike locations are most popular, or a correlation between the type of bike share member, the duration of the ride or the type of bike chosen?
+  + How does the weather affect the number of people using city bikes?
+
+* **Implications of Research:**
+  + Beneficial to city bike share company to see how to maximize the amount of customers
+  + Beneficial to users to see trends in business based off of their own start stations
+
+## Scatterplot of Ride Duration by Date
+
+```{r, echo=FALSE, warning=FALSE}
+# library(ggplot2)
+# install.packages("tidyverse")
+start_time <- bike_dta$started_at
+end_time <- bike_dta$ended_at
+bike_dta$start_time <- as.POSIXct(start_time,tz="EST")
+bike_dta$end_time <- as.POSIXct(end_time,tz="EST")
+bike_dta$duration <- as.numeric((bike_dta$end_time - bike_dta$start_time) / 60)
+
+# Identify top station (Lincoln Memorial)
+# tab <- table(bike_dta$start_station_name)
+# sort(tab)
+linc_mem <- subset(bike_dta, bike_dta$start_station_name == "Lincoln Memorial" &
+                     bike_dta$end_station_name != "Lincoln Memorial")
+linc_mem <- na.omit(linc_mem)
+
+ggplot(data = linc_mem, aes(x = start_time, y = duration)) +
+  geom_point(color = "skyblue") +
+  ggtitle("Duration by Date for Lincoln Memorial Station, August 2022") +
+  xlab("Date") + ylab("Rental Duration (min)")
+```
+
+
+## Daily Usage Rank of the Top 10 Most Common Starting Stations
+
+
+```{r, echo=FALSE, warning=FALSE}
+# library(ggplot2)
+# library(dplyr)
+bike_dta$date <- format(bike_dta$start_time, '%Y-%m-%d')
+bike_data_sub <- subset(bike_dta, select = c("start_station_name", "end_station_name", "date"))
+bike_data_sub <- bike_data_sub %>% 
+  add_count(start_station_name, name = 'start_occurance')
+bike_data_sub <- bike_data_sub %>%
+  add_count(end_station_name, name = 'end_occurance')
+# View(bike_data_sub)
+
+#Only use 10 most common stations
+bike_data_sub <- subset(bike_data_sub, end_station_name %in% names(sort(table(bike_data_sub$start_station_name),decreasing=TRUE)[2:11]))
+bike_data_sub <- subset(bike_data_sub, start_station_name %in% bike_data_sub$end_station_name)
+
+length(unique(bike_data_sub$start_station_name))
+length(unique(bike_data_sub$end_station_name))
+
+
+bike_sub2 <- bike_data_sub %>%
+  group_by(date) %>%
+  add_count(start_station_name, name = 'occurance_by_day') %>%
+  ungroup()
+  
+bike_sub2 <- bike_sub2 %>% distinct(start_station_name, date, .keep_all=TRUE)
+
+bike_sub3 <- bike_sub2 %>%
+  group_by(date) %>%
+  arrange(date, desc(occurance_by_day), start_station_name) %>%
+  mutate(rank=row_number())%>%
+  ungroup()
+
+bike_sub3$date <- as.Date(bike_sub3$date)
+
+
+ggplot(bike_sub3, aes(x=date, y = rank, group = start_station_name))+
+  geom_line(aes(color = start_station_name), size = 2, alpha = .75)+
+  geom_point(aes(color = start_station_name), size = 4, alpha = .75)+
+  scale_y_reverse(breaks = 1:10)+
+  scale_color_brewer(palette = "Paired", name = "Station Name")+
+  scale_x_date(date_breaks = "6 days")+
+  theme(legend.position = "bottom") +
+  guides(color = guide_legend(nrow = 4)) +
+  labs(title = "Daily Usage Rank of the Top 10 Most Common Starting Stations", x = "Date", y = "Rank")
+```
+
+
+## Density Plot of Riding Distance by Bike Type
+
+```{r, echo=FALSE, output=TRUE, warning=FALSE}
+#Calculating duration:
+# start_time <- as.POSIXct(bike_dta$started_at,tz="EST")
+# end_time <- as.POSIXct(bike_dta$ended_at,tz="EST")
+bike_dta$duration_sec <- bike_dta$end_time - bike_dta$start_time
+bike_dta$duration_min <- bike_dta$duration_sec/60
+
+
+
+#Densities:
+bike_dta <- na.omit(bike_dta)
+bike_dta$distance <-sqrt((69*(bike_dta$end_lat - bike_dta$start_lat))**2 + 55*((bike_dta$end_lat - bike_dta$start_lat))**2)
+bike_dta2 <- bike_dta[bike_dta$distance<=3, ]
+
+ggplot(bike_dta2, aes(x=distance)) + geom_density(alpha=.2, fill="#FF6666") + geom_vline(aes(xintercept=mean(distance)), color="blue", linetype="dashed", size=1) + labs(x="Distance (miles)", y = "Density") + facet_grid(. ~ rideable_type)
+```
+
+
+## Barplots of Distance Ridden by Type of Bike
+
+```{r, echo=FALSE, output=TRUE, warning=FALSE}
+
+dist <- sqrt((69*(bike_dta$end_lat - bike_dta$start_lat))**2 + 55*((bike_dta$end_lat - bike_dta$start_lat))**2)
+
+bike_dta$dist <- dist
+
+brks <- seq(-250000, 250000, 50000)
+lbls = paste0(as.character(c(seq(250, 0, -50), seq(50, 250, 50))), "k")
+
+#bike_dta$rideable_type
+
+# Plot
+ggplot(bike_dta, aes(x = rideable_type, y = dist, fill = member_casual)) +
+  geom_bar(stat = "identity", width = .6) +
+  coord_flip() + 
+  theme_tufte() + 
+  scale_fill_brewer(palette = "Dark2") + 
+  theme(plot.title = element_text(hjust = .5), axis.ticks = element_blank()) +
+  labs(title = "Distance Ridden By Type of Bike") +
+  xlab("Type of Bike") +
+  ylab("Distance Ridden in August") +
+  scale_y_continuous(breaks = brks, labels = lbls) +
+  theme(plot.title = element_text(hjust = .5, size = 25), axis.ticks = element_blank()) +
+  labs(fill = "Type of Member")
+
+```
+
+
+
+## Boxplots of Bike Types and Rental Durations
+
+
+```{r, echo = FALSE, output = TRUE, warning=FALSE}
+#Calculating duration:
+# start_time <- as.POSIXct(bike_dta$started_at,tz="EST")
+# end_time <- as.POSIXct(bike_dta$ended_at,tz="EST")
+bike_dta$duration_sec <- bike_dta$end_time - bike_dta$start_time
+bike_dta$duration_min <- bike_dta$duration_sec/60
+
+#Boxplots:
+par(mfrow = c(1, 3))
+boxplot(subset(bike_dta$duration_min, bike_dta$duration_min<=60 & bike_dta$rideable_type == "classic_bike"), main="Classic Bikes Boxplot", 
+        ylab="Duration (min)", col="red")
+boxplot(subset(bike_dta$duration_min, bike_dta$duration_min<=60 & bike_dta$rideable_type == "electric_bike"), main="Electric Bikes Boxplot", col="green")
+boxplot(subset(bike_dta$duration_min, bike_dta$duration_min<=60 & bike_dta$rideable_type == "docked_bike"), main="Docked Bikes Boxplot", col="blue")
+
+```
+
+## Most Popular Stations by Start and End Location
+
+```{r, echo = FALSE, output = TRUE}
+counts_start <- head(sort(table(bike_dta$start_station_name), decreasing = TRUE), 6)[-1]
+
+counts_end <- head(sort(table(bike_dta$end_station_name), decreasing = TRUE), 6)[-1]
+
+stations <- rbind(counts_start,counts_end)
+
+par(mfrow = c(1, 1))
+barplot(stations, col = c('darkblue', 'red'),
+        names.arg = c("Lincoln",'Jefferson', "T St.", '15th', 'Union St'),
+        main = "Most Popular Stations by Start and End Location",
+        legend = c('End Location', 'Start Location'), 
+        args.legend = list(x = "topright",
+                           inset = c(0, -0.1)),
+        xlab = 'Stations',
+        ylab = "Count of Riders")
+```
+
+
+## Histogram of Usage Frequency by Days of the Week and Date
+
+```{r, echo = FALSE, output = TRUE}
+par(mfrow = c(1, 2))
+# bike_dta$started_at <- as.POSIXct(bike_dta$started_at, tz = "EST")
+# bike_dta$ended_at <-as.POSIXct(bike_dta$ended_at, tz = "EST")
+# bike_dta$duration <-  as.numeric(bike_dta$end_time - bike_dta$start_time)
+bike_dta$weekday <-as.Date(bike_dta$start_time)
+bike_dta$weekday <- format(bike_dta$weekday, "%a")
+# bike_dta$weekdayn <- as.numeric(format(bike_dta$start_time, "%w"))
+# hist(bike_dta$weekdayn, breaks = -.5+0:7, labels = unique(bike_dta$weekday[order(bike_dta$weekdayn)]), xlab = "", xaxt = "n",  main ="Ride Frequency Per Day of Week", col = "deepskyblue")
+barplot(table(bike_dta$weekday), main = "Ride Frequency Per Day of Week", xlab = "Day of the Week", col = "deepskyblue")
+date_formatted <- as.Date(bike_dta$start_time, format = "%Y-%m-%d")
+ride_start_days <- format(date_formatted, "%d")
+barplot(table(ride_start_days), main = "Rides By Day in August", xlab = "Day", ylab = "Number of Rides", col = "yellow")
+
+```
+
+
+
+## Bike Rides vs Average Temperature of That Day
+
+```{r, echo = FALSE, output = TRUE}
+# weather <- read.csv("C:/Users/Ndidi/Desktop/2022-23/fall/STAT 405/data project/stat405-project/Washington,DC,USA weather 2022-08-01 to 2022-08-31.csv")
+# Create query for average based on condition
+# res <- dbSendQuery(conn = dcon, "
+#               SELECT w.datetime, w.temp, b.started_at
+#               FROM bikes b, weather w;")
+# 
+# # store results in df
+# rides <- dbFetch(res, -1)
+# dbClearResult(res)
+
+rides_per_day <- data.frame(weatherTable$datetime, weatherTable$temp, table(ride_start_days))
+
+ggplot(rides_per_day)  + 
+  geom_bar(aes(x=ride_start_days, y=Freq),stat="identity", fill="lightgreen",color="darkgreen")+
+  geom_line(aes(x=ride_start_days, y=weatherTable.temp *150, group = 1),stat="identity",color="red",size=2)+
+  labs(title= "Bike Rides vs Temperature (in Fahrenheit)",
+       x="day",y="Number of Bike Rides")+
+  scale_y_continuous(sec.axis=sec_axis(
+    ~./ 150,name="Temperature"))
+
+```
+
+
+## Concentration of Trip Starts
+
+```{r, echo = FALSE, output = TRUE, warning=FALSE, message=FALSE}
+# Create query for average based on condition
+res <- dbSendQuery(conn = dcon, "
+              SELECT start_station_name, end_station_name, COUNT(*) as num_trips
+              FROM bike_dta b
+              GROUP BY start_station_name, end_station_name
+              ORDER BY (-1 * num_trips) 
+              LIMIT 10;
+                   ")
+
+# store results in df
+station_travel <- dbFetch(res, -1)
+dbClearResult(res)
+# station_travel
+
+ggplot(data = station_travel[-1,], aes(x = start_station_name, y = num_trips)) +
+  geom_bar(stat = 'identity') +
+  coord_flip() +
+  ggtitle("Concentration of Trip Starts") +
+  labs(x = "Start Station Name", y = "Number of Trips") +
+  theme_minimal()
+```
+
+
+
+## Effects of Afternoon Rain on Bike Usage
+
+```{r, echo = FALSE, output = TRUE, warning=FALSE}
+## Join two dataframes based on start date
+res <- dbSendQuery(conn = dcon, "
+SELECT *
+FROM (SELECT *, date(started_at) as date FROM bike_dta) as a, weatherTable
+WHERE a.date = weatherTable.datetime
+ORDER BY a.date")
+mydf <- dbFetch(res,-1)
+dbClearResult(res)
+
+## Search Description for presence of After Noon Rain
+mydf$after_noon_rain <- str_detect(mydf$description, "afternoon rain")
+mydf$after_noon_rain <-  factor(mydf$after_noon_rain, labels = c("No Afternoon Rain", "Afternoon Rain"))
+ 
+#Extract Hour From Time Stamp 
+mydf$hour <- hour(mydf$started_at)
+
+#Plot it
+ggplot(data = mydf, aes(x = hour))+
+  geom_histogram(stat = "count", fill = "deepskyblue3")+
+  facet_wrap(~after_noon_rain, scales = "free")+
+  labs(title = "Effects of Afternoon Rain on Bike Usage", y = "Trip Count", x = "Hour of Day", 
+       facet = c("No Rain", "Rain"))+
+  theme_bw()
+```
+
+
+## Effects of Weather Description on Bike Rides
+
+```{r, echo = FALSE, output = TRUE, warning=FALSE, message=FALSE}
+weatherTable$cloudy <- as.factor(as.numeric(str_detect(weatherTable$description, "cloud")))
+weatherTable$clear <- as.factor(as.numeric(str_detect(weatherTable$description, "Clear")))
+weatherTable$rain <- as.factor(as.numeric(str_detect(weatherTable$description, "rain")))
+
+bike_dta$date <- str_sub(bike_dta$started_at, 1, 10)
+
+# aggregating by rides per day
+by_date <- bike_dta %>%
+  group_by(date) %>%
+  summarise(total_rides = n()) 
+weatherTable$date <- as.Date(weatherTable$datetime)
+by_date$date <- by_date$date
+dates <- by_date$date
+by_date$date <- as.POSIXct(dates,tz=Sys.timezone())
+# joining weather data with bike data
+ride_weather <- inner_join(by_date, weatherTable)
+
+mod <- lm(total_rides ~ rain+clear+cloudy, data = ride_weather)
+# summary(mod)
+# creating a substantive effect plot
+dwplot(mod, vline = geom_vline(xintercept = 0, colour = "grey60", linetype = 2))%>% 
+  relabel_predictors(c(rain1= "Rain", clear1 = "Clear",cloudy1 = "Cloudy")) +
+  ggtitle("Effects of Weather Description Factors on Rides")
+
+```
+
+
+## Modeling
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+# bikes
+# data manipulation
+bike_dta$date <- substr(bike_dta$started_at, 1, 11)
+
+mod_data <- bike_dta %>%
+  group_by(date) %>%
+  summarize(num_bikers = n())
+
+# mod_data$date <- as.Date(mod_data$date)
+mod_data$date <- str_trim(mod_data$date)
+
+mod_data <- mod_data %>% inner_join(weatherTable, by = c('date' = "datetime"))
+```
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+# linear modeling
+mod_1 = lm(num_bikers~tempmax+tempmin+temp+feelslike+dew+humidity+precip+windgust+windspeed+winddir+visibility+solarradiation+severerisk+uvindex, data = mod_data)
+# summary(mod_1)
+```
+
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+# visualizing linear feature importance
+library(dotwhisker)
+dwplot(mod_1) +
+  ggtitle("Linear Model Feature Coefficients") +
+  labs(x = "Standardized Effect", y = "Feature Name", subtitle = "Large importance in precipitation, tempurature") +
+  theme_classic() +
+  geom_vline(xintercept = 0) +
+  theme(legend.position = "none")
+
+```
+
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+# random forest regression
+mod_data
+#install.packages("randomForest")
+library(randomForest)
+library(ggplot2)
+rf.fit <- randomForest(num_bikers~tempmax+tempmin+temp+feelslike+dew+humidity+precip+
+                         windgust+windspeed+winddir+visibility+solarradiation+severerisk+uvindex,
+                       data=mod_data, ntree=1000,
+                       keep.forest=FALSE, importance=TRUE)
+rf.fit
+rmse <- sqrt(1225608)
+rmse
+
+ImpData <- as.data.frame(importance(rf.fit))
+ImpData$Var.Names <- row.names(ImpData)
+```
+
+```{r, warning=FALSE, message=FALSE}
+
+ggplot(ImpData, aes(x=Var.Names, y=`%IncMSE`)) +
+  geom_segment( aes(x=Var.Names, xend=Var.Names, y=0, yend=`%IncMSE`), color="blue") +
+  geom_point(aes(size = IncNodePurity), color="dodgerblue4", alpha=0.6) +
+  theme_light() +
+  coord_flip() +
+  theme(
+    legend.position="none",
+    panel.grid.major.y = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank()
+  ) +
+  ggtitle("Random Forest Feature Importances") +
+  labs(x = "% Increase in MSE", y = "Variable Name", subtilte = "Precipitation measures prove to be effective predictors of bike traffic")
+```
+
+
+##
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(shiny)
+library(bslib)
+
+# Define UI for application that draws a histogram
+ui <- fluidPage(
+  
+   theme = bs_theme(version = 4, bootswatch = "minty"),
+   # Application title
+   titlePanel("Our Killer Plot: Relative Ride Destinations"),
+   
+   # Sidebar with a dropdown input for number of bins 
+   sidebarLayout(
+      sidebarPanel(
+         selectInput(inputId = "start_stations", 
+                     label = "Choose a Starting Station"),
+      ),
+      
+      # Show a plot of the generated distribution
+      mainPanel(
+         plotOutput("plot")
+      )
+   )
+)
+
+# Define server logic required to draw a histogram
+server <- function(input, output, session) {
+  
+  ### Killer Plot Stuff
+  ## calculate bearings
+  bike_dta$bearings <- bearing(bike_dta[, c("start_lng", "start_lat")], bike_dta[, c("end_lng", "end_lat")])
+  
+  #convert to radians
+  bike_dta$bearings <- -(bike_dta$bearings * pi / 180 - pi/2)
+  bike_dts$circle_x <- cos(bike_dta$bearings)
+  bike_dta$circle_y <- sin(bike_dta$bearings)
+  
+  
+  
+  bike_dta <- subset(bike_dta, start_station_name != "")
+  bike_dta <- subset(bike_dta, end_station_name != "")
+  # install.packages('sf')
+  
+  bike_prepped <- bike_dta %>% group_by(start_station_name, end_station_name) %>% 
+    summarise(count = n(),
+              bearings = mean(bearings))
+  bike_prepped$circle_x <- cos(bike_prepped$bearings)
+  bike_prepped$circle_y <- sin(bike_prepped$bearings)
+  
+  station_plot_df <- bike_dta %>% group_by(start_station_name) %>% 
+    summarise(count = n(),
+              start_lat = mean(start_lat),
+              start_lng = mean(start_lng))
+  
+  my_sf <- st_as_sf(station_plot_df, coords = c('start_lng', 'start_lat'))
+  
+  
+  ##Function for scaling counts
+  opacity_scale <- function(x){(x-min(x))/(max(x)-min(x))}
+  
+  
+  ## Killer Plot Function
+  killer_plot <- function(df, station_name, station_number = 5){
+    
+    #subset for desired station
+    station_df <- subset(df, start_station_name == station_name)
+    
+    #find top n stations
+    top.n.stations <- station_df[order(-station_df$count),]$end_station_name[1:station_number] 
+    
+    #set up grid
+    grid.newpage()
+    vp <- viewport(x = .325, y = 0.65, width = 0.7, height = 0.7)
+    pushViewport(vp)
+    grid.circle(x = .5, y = .5, r = 0.4, gp = gpar(fill = "black"), default.units = "native")
+    grid.circle(x = .5, y = .5, r = 0.38, default.units = "native")
+    
+    r = 0.38
+    
+    station_df$circle_x <- station_df$circle_x * r + 0.5
+    station_df$circle_y <- station_df$circle_y * r + 0.5
+    
+    #determine opacity
+    station_df$opacity <- opacity_scale(station_df$count)
+    
+    
+    #iterate through trips to draw lines
+    for (i in 1:nrow(station_df)){
+      angle = station_df[i, "bearings"]
+      grid.lines(x = c(.5, station_df$circle_x[i]), y = c(.5, station_df$circle_y[i]), 
+                 default.units = "native", gp = gpar(lwd = 3, alpha = station_df$opacity[i]))
+    }
+    
+    
+    grid.circle(x=.5, y = .5, r = 0.03, gp = gpar(fill = "gray"), default.units = "native")
+    
+    popViewport()
+    vp2 <- viewport(x = .7, y = 0.25, width = 0.6, height = 0.55)
+    my_sf$group <- as.factor(ifelse(station_plot_df$start_station_name == station_name, "1", 
+                                    ifelse(station_plot_df$start_station_name %in% top.n.stations, "2", "0")))
+    #this is not part of the killer plot, so ggplot is okay
+    plota <- ggplot(my_sf) + 
+      geom_sf(aes(color = group))+
+      scale_color_manual(values = c("black", "green", "red"))+
+      theme_void()+    
+      theme(legend.position = "none")
+  
+    print(plota, vp = vp2)
+  }
+  
+  
+  #Update SelectInput Dynamically
+  observe({
+    updateSelectInput(session, "start_stations", choices = sales$SalesRep)
+  })
+  
+  ## second argument is selecting center station, third is number of stations to highlight in red on the second map.
+  output$plot <- renderPlot({
+    highlightNum <-
+    g <- ggplot(data(), aes( y = Sales, x = QTR))
+    g + geom_bar(stat = "sum")
+  })
+   
+   # output$distPlot <- renderPlot({
+   #    # generate bins based on input$bins from ui.R
+   #    x    <- faithful[, 2] 
+   #    bins <- seq(min(x), max(x), length.out = input$bins + 1)
+   #    
+   #    # draw the histogram with the specified number of bins
+   #    hist(x, breaks = bins, col = 'darkgray', border = 'white')
+   # })
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
+```
+
+## Conclusion
+* Usage of bikes is concentrated heavily in several popular stations
+* Generally, bikes are used for short distance and duration trips
+* Precipitation is particularly impactful in decreasing the number of bike rides in a day
+* Weather data proves to be an effective predictor of bike share usage
+
