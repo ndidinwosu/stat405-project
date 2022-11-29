@@ -427,46 +427,59 @@ ggplot(ImpData, aes(x=Var.Names, y=`%IncMSE`)) +
 ##
 ```{r, echo=FALSE, warning=FALSE, message=FALSE}
 library(shiny)
-library(bslib)
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
-  
-   theme = bs_theme(version = 4, bootswatch = "minty"),
-   # Application title
-   titlePanel("Our Killer Plot: Relative Ride Destinations"),
    
-   # Sidebar with a dropdown input for number of bins 
+   # Application title
+   titlePanel("Old Faithful Geyser Data"),
+   
+   # Sidebar with a slider input for number of bins 
    sidebarLayout(
       sidebarPanel(
-         selectInput(inputId = "start_stations", 
-                     label = "Choose a Starting Station"),
-      ),
+         sliderInput("highlighted",
+                     "Number of Highlighted Stations:",
+                     min = 1,
+                     max = 20,
+                     value = 5
+          ),
       
+      selectInput(inputId ="starter_station",
+                  label = "Choose MicroRNA",
+                  choices = c(1, 2, 3),
+                  selected = NULL
+      )
+      ),
       # Show a plot of the generated distribution
       mainPanel(
-         plotOutput("plot")
+         plotOutput("distPlot")
       )
    )
 )
 
 # Define server logic required to draw a histogram
-server <- function(input, output, session) {
+server <- function(input, output) {
   
   ### Killer Plot Stuff
+  
+  library(grid)
+  
+  # rm(list = ls())
+  
+  
   ## calculate bearings
+
   bike_dta$bearings <- bearing(bike_dta[, c("start_lng", "start_lat")], bike_dta[, c("end_lng", "end_lat")])
   
   #convert to radians
   bike_dta$bearings <- -(bike_dta$bearings * pi / 180 - pi/2)
-  bike_dts$circle_x <- cos(bike_dta$bearings)
+  bike_dta$circle_x <- cos(bike_dta$bearings)
   bike_dta$circle_y <- sin(bike_dta$bearings)
   
   
   
   bike_dta <- subset(bike_dta, start_station_name != "")
   bike_dta <- subset(bike_dta, end_station_name != "")
-  # install.packages('sf')
   
   bike_prepped <- bike_dta %>% group_by(start_station_name, end_station_name) %>% 
     summarise(count = n(),
@@ -534,28 +547,10 @@ server <- function(input, output, session) {
   
     print(plota, vp = vp2)
   }
-  
-  
-  #Update SelectInput Dynamically
-  observe({
-    updateSelectInput(session, "start_stations", choices = sales$SalesRep)
-  })
-  
-  ## second argument is selecting center station, third is number of stations to highlight in red on the second map.
-  output$plot <- renderPlot({
-    highlightNum <-
-    g <- ggplot(data(), aes( y = Sales, x = QTR))
-    g + geom_bar(stat = "sum")
-  })
    
-   # output$distPlot <- renderPlot({
-   #    # generate bins based on input$bins from ui.R
-   #    x    <- faithful[, 2] 
-   #    bins <- seq(min(x), max(x), length.out = input$bins + 1)
-   #    
-   #    # draw the histogram with the specified number of bins
-   #    hist(x, breaks = bins, col = 'darkgray', border = 'white')
-   # })
+   output$distPlot <- renderPlot({
+     killer_plot(df = bike_prepped, station_name = names(sort(table(bike_dta$start_station_name), decreasing= TRUE))[8], 15)
+   })
 }
 
 # Run the application 
